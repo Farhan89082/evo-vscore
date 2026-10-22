@@ -124,3 +124,28 @@ def test_chr_prefix_mismatch_between_vcf_and_fasta(genome, tmp_path):
     assert run("--vcf", vcf, "--ref", path, "--backend", "mock", "--no-cache", "--out", out) == 0
     (row,) = read_rows(str(out) + ".csv")
     assert row["status"] == "ok" and row["chrom"] == "1"
+
+
+def test_nvidia_runs_print_a_data_notice_and_never_the_key(tmp_path, monkeypatch, capsys):
+    class Stub(cli.MockBackend):
+        name = "nvidia"
+        cache_id = "stub-nvidia:v1"
+        is_mock = False
+
+        def __init__(self, api_key, rpm=30):
+            pass
+
+    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-" + "x" * 64)
+    monkeypatch.setattr(cli, "NvidiaBackend", Stub)
+    code = run("--vcf", EXAMPLES / "tiny.vcf", "--ref", EXAMPLES / "tiny.fa", "--backend", "nvidia",
+               "--no-cache", "--limit", "1", "--out", tmp_path / "n")
+    err = capsys.readouterr().err
+    assert code == 0
+    assert "sent to NVIDIA" in err and "identifiable patient" in err
+    assert "nvapi-" not in err
+
+
+def test_mock_runs_do_not_print_the_nvidia_notice(tmp_path, capsys):
+    run("--vcf", EXAMPLES / "tiny.vcf", "--ref", EXAMPLES / "tiny.fa", "--backend", "mock",
+        "--no-cache", "--limit", "1", "--out", tmp_path / "m")
+    assert "sent to NVIDIA" not in capsys.readouterr().err

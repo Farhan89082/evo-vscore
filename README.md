@@ -56,7 +56,9 @@ This writes `out\demo.csv` and `out\demo.html`. The example genome is synthetic.
    ```
 
 Your own free NVIDIA account has its own rate limit (about 40 requests a minute at the time of
-writing; the tool defaults to 30 to stay under it). Check NVIDIA's current terms for your use.
+writing; the tool defaults to 30 to stay under it). **Before you use it, read
+[Data privacy and NVIDIA's terms](#data-privacy-and-nvidias-terms):** sequences are sent to NVIDIA, and the
+free access has conditions.
 
 ## Inputs
 
@@ -207,7 +209,8 @@ and no comparison with the published Evo 2 non-SNV numbers is made, since the pr
 ## Limitations (v0.2)
 
 - Validated only on BRCA1 SNVs so far; indels and other genes are untested. Do not draw clinical conclusions.
-- Only the 7B model, through one hosted API. Its availability, limits and terms are NVIDIA's.
+- Only the 7B model, through one hosted API. Its availability, limits and terms are NVIDIA's, and the free
+  trial access is not meant for production use or sensitive data (see below). A local backend is planned.
 - Large VCFs are slow at API rates: roughly 1 to 2 calls per variant at 30 requests a minute.
 - Uncompressed FASTA only. No structural variants.
 
@@ -218,6 +221,49 @@ and no comparison with the published Evo 2 non-SNV numbers is made, since the pr
 - **v0.3:** a `local` backend for people with their own GPU, a rented GPU or a cluster, with no API limit.
 - Later: genome-track outputs (bigWig/BED), a pip release, and a web interface.
 
+## Data privacy and NVIDIA's terms
+
+**What leaves your computer.** With `--backend nvidia`, DNA sequences (a window of reference genome with
+your variant applied) are sent to NVIDIA's servers. The tool prints a notice every time. The `mock` backend
+sends nothing. Results and the local cache stay on your machine; the cache stores only hashes of sequences
+and their scores.
+
+**Do not use `--backend nvidia` with identifiable patient or other health data.** The benchmarks in this
+repository use public data only.
+
+**NVIDIA's conditions.** NVIDIA publishes the
+[API Trial Terms of Service](https://assets.ngc.nvidia.com/products/api-catalog/legal/NVIDIA%20API%20Trial%20Terms%20of%20Service.pdf)
+(the version dated 19 September 2025 at the time of writing) and its
+[Technology Access Terms of Use](https://developer.nvidia.com/legal/terms). As read by the author, the trial
+terms describe the free access as for trial, internal testing and evaluation rather than production use;
+prohibit uploading personal or health information about identifiable people; allow NVIDIA to collect inputs
+and outputs to improve its products; limit passing access on to others; and let NVIDIA change or end the
+service. **This is the author's reading, not legal advice, and the terms may have changed. Read them
+yourself.** Whether your own work counts as evaluation is for you to judge, possibly with NVIDIA's help.
+
+In practice:
+- Each user should use their own NVIDIA key and accept the terms themselves. Do not share keys or run a
+  shared service on one key.
+- For production work, large studies or sensitive data, use a paid NVIDIA subscription or run the model
+  yourself (a `local` backend is planned for v0.3).
+- This project is independent. It is not affiliated with or endorsed by Arc Institute, NVIDIA, NCBI or UCSC.
+
+## Citing and acknowledgements
+
+If you use this software, please cite it (`CITATION.cff`, or GitHub's "Cite this repository") **and** the
+work it builds on:
+
+- **Evo 2:** "Genome modelling and design across all domains of life with Evo 2", *Nature* (2026),
+  [doi:10.1038/s41586-026-10176-5](https://doi.org/10.1038/s41586-026-10176-5); code at
+  [ArcInstitute/evo2](https://github.com/ArcInstitute/evo2).
+- **BRCA1 benchmark:** Findlay et al., "Accurate classification of BRCA1 variants with saturation genome
+  editing", *Nature* (2018), [doi:10.1038/s41586-018-0461-z](https://doi.org/10.1038/s41586-018-0461-z).
+- **ClinVar:** [NCBI ClinVar](https://www.ncbi.nlm.nih.gov/clinvar/); follow NCBI's citation guidance.
+- **Reference genome:** hg19 / GRCh37 from the [UCSC Genome Browser](https://genome.ucsc.edu/).
+- **Model access:** NVIDIA's hosted [Evo 2 7B](https://build.nvidia.com/arc/evo2-7b-forward) endpoint.
+
+See also `SECURITY.md` for how to handle keys and report problems, and `CHANGELOG.md`.
+
 ## Responsible use
 
 Use this for research. The Evo 2 authors excluded eukaryotic-virus sequences from training as a
@@ -226,4 +272,4 @@ following the licences and terms of the model and of any API you use.
 
 ## Licence
 
-Apache-2.0, see `LICENSE`. Evo 2 and the NVIDIA API have their own licences and terms.
+Apache-2.0, see `LICENSE` and `NOTICE`. Evo 2, the NVIDIA API and the datasets have their own licences and terms.

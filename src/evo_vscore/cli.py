@@ -97,6 +97,9 @@ def run(args):
         backend = _make_backend(args)
         if backend.is_mock:
             _log("NOTE: mock backend - the scores are fake and have no biological meaning.")
+        if args.backend == "nvidia":
+            _log("NOTE: DNA sequences are being sent to NVIDIA's hosted API under NVIDIA's own terms. "
+                 "Do not use identifiable patient or other health data. See 'Data privacy' in the README.")
         scorer = Scorer(fasta, backend, cache, args.window)
         csv_path, html_path = args.out + ".csv", args.out + ".html"
         writer = CsvWriter(csv_path)

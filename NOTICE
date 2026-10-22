@@ -1,0 +1,8 @@
+evo-vscore
+Copyright 2026 Farhan89082
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This project does not bundle third-party code. It calls external services and
+uses public datasets, each under its own terms; see the README sections
+"Data privacy and NVIDIA's terms" and "Citing and acknowledgements".

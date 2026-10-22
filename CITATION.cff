@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below. Please also cite Evo 2 and any benchmark data you use (see the README)."
+title: "evo-vscore"
+type: software
+abstract: "Command-line tool that scores SNVs and indels from a VCF file with a DNA language model (Evo 2 through NVIDIA's hosted API) and reports the results as CSV and HTML. Includes validation against BRCA1 saturation-genome-editing data and ClinVar indels. Research use only."
+authors:
+  - alias: "Farhan89082"
+version: 0.2.2
+date-released: 2026-10-22
+license: Apache-2.0
+repository-code: "https://github.com/Farhan89082/evo-vscore"
+keywords:
+  - genomics
+  - variant effect prediction
+  - DNA language model
+  - Evo 2

@@ -4,11 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "evo-vscore"
-version = "0.2.1"
+version = "0.2.2"
 description = "Score DNA variants (SNVs and indels) from a VCF with a DNA language model such as Evo 2. Research use only."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "Apache-2.0" }
+authors = [{ name = "Farhan89082" }]
+keywords = ["genomics", "variant effect prediction", "DNA language model", "Evo 2", "VCF"]
 dependencies = ["numpy>=1.21"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -21,6 +23,10 @@ classifiers = [
 [project.optional-dependencies]
 validation = ["openpyxl>=3.1"]
 dev = ["pytest>=7", "openpyxl>=3.1"]
+
+[project.urls]
+Repository = "https://github.com/Farhan89082/evo-vscore"
+Issues = "https://github.com/Farhan89082/evo-vscore/issues"
 
 [project.scripts]
 evo-vscore = "evo_vscore.cli:main"
