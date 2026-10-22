@@ -97,7 +97,7 @@ def write_html(results, path, backend_name, is_mock, window, partial=False):
         "reference window. <strong>More negative = the model finds the variant less plausible</strong>, "
         "which is a hint of disruption, not a diagnosis. For insertions and deletions the two windows have "
         "different lengths, so <code>delta_mean_ll</code> (per base) is shown as well. Scores are "
-        "<strong>unvalidated research output</strong>; do not use them for clinical decisions.</div>"
+        "<strong>research output, validated so far only on BRCA1 SNVs</strong>; do not use them for clinical decisions.</div>"
     )
     parts.append("<h2>Most disruptive variants</h2>")
     if not shown:

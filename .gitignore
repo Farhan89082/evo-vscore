@@ -19,6 +19,12 @@ venv/
 results*.csv
 results*.html
 out/
+# third-party data and genome files (large, and not ours to redistribute)
+data/
+*.fa
+*.fna
+*.gz
+!examples/tiny.fa
 body.json
 response.bin
 headers.txt

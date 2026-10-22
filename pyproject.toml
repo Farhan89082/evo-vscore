@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "evo-vscore"
-version = "0.1.0"
+version = "0.2.0"
 description = "Score DNA variants (SNVs and indels) from a VCF with a DNA language model such as Evo 2. Research use only."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -19,10 +19,12 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7"]
+validation = ["openpyxl>=3.1"]
+dev = ["pytest>=7", "openpyxl>=3.1"]
 
 [project.scripts]
 evo-vscore = "evo_vscore.cli:main"
+evo-vscore-brca1 = "evo_vscore.validation:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
