@@ -1,0 +1,10 @@
+##fileformat=VCFv4.2
+##note=synthetic example; positions refer to examples/tiny.fa
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO
+chr1	500	snv_1	T	A	.	.	.
+chr1	1200	snv_2	G	A	.	.	.
+chr1	1800	ins_1	G	GACG	.	.	.
+chr1	2300	del_1	GTCA	G	.	.	.
+chr2	700	snv_3	C	A	.	.	.
+chr1	900	bad_ref	C	T	.	.	.
+chr1	2000	sv_1	T	<DEL>	.	.	.
