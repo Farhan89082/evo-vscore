@@ -24,6 +24,7 @@ data/
 *.fa
 *.fna
 *.gz
+*.fai
 !examples/tiny.fa
 body.json
 response.bin

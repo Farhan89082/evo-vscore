@@ -81,6 +81,16 @@ def _build_index(path):
     return index
 
 
+def _try_write_fai(index, fai_path):
+    """Save the index in samtools .fai format. Failing to write it is harmless."""
+    try:
+        with open(fai_path, "w", encoding="utf-8", newline="\n") as fh:
+            for name, (length, offset, linebases, linewidth) in index.items():
+                fh.write("%s\t%d\t%d\t%d\t%d\n" % (name, length, offset, linebases, linewidth))
+    except OSError:
+        pass
+
+
 class FastaReference:
     """Fetch 0-based, half-open slices of a FASTA file as upper-case strings."""
 
@@ -95,7 +105,13 @@ class FastaReference:
             raise FileNotFoundError("Reference FASTA not found: %s" % path)
         self.path = path
         fai = path + ".fai"
-        self._index = _parse_fai(fai) if os.path.exists(fai) else _build_index(path)
+        index = None
+        if os.path.exists(fai) and os.path.getmtime(fai) >= os.path.getmtime(path):
+            index = _parse_fai(fai)  # an up-to-date index: skip the slow scan
+        if index is None:
+            index = _build_index(path)
+            _try_write_fai(index, fai)  # so the next run starts instantly
+        self._index = index
         if not self._index:
             raise FastaError("No sequences found in %s" % path)
         self._fh = open(path, "rb")

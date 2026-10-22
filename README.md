@@ -124,25 +124,56 @@ spreadsheet (it uses hg19).
 
 ### Results (22 Oct 2026)
 
-Random sample of 400 of the 3,893 BRCA1 SNVs (`--sample 400`, seed 42), Evo 2 7B through NVIDIA's
-hosted API, 8,192-base windows. LOF is the positive class.
+All 3,893 BRCA1 SNVs, Evo 2 7B through NVIDIA's hosted API, 8,192-base windows (about 2.2 hours at
+36 requests a minute). LOF is the positive class.
 
 | Comparison | n | LOF | AUROC | 95% CI (bootstrap) |
 |---|---|---|---|---|
-| LOF vs FUNC+INT (all) | 400 | 90 | 0.890 | 0.849 to 0.921 |
-| LOF vs FUNC only (INT excluded) | 377 | 90 | 0.900 | 0.864 to 0.932 |
-| Missense only | 216 | 58 | 0.776 | 0.699 to 0.847 |
-| Splice region only | 49 | 10 | 0.972 | 0.922 to 1.000 |
+| LOF vs FUNC+INT (all) | 3,893 | 823 | 0.873 | 0.860 to 0.886 |
+| LOF vs FUNC only (INT excluded) | 3,644 | 823 | 0.886 | 0.874 to 0.898 |
+| Missense only | 2,086 | 441 | 0.784 | 0.760 to 0.807 |
+| Splice region only | 446 | 102 | 0.910 | 0.880 to 0.938 |
+| Canonical splice only | 143 | 128 | 0.691 | 0.512 to 0.839 |
 
-Mean `delta_ll` by class: FUNC -6.5, INT -15.3, LOF -32.8 (more negative = less plausible).
+Mean `delta_ll` by class: FUNC -7.1, INT -17.7, LOF -33.6 (more negative = less plausible).
+An earlier 400-variant random sample gave 0.890 (0.849 to 0.921), consistent with the full run.
 
 For context, NVIDIA's [BioNeMo tutorial](https://docs.nvidia.com/bionemo-framework/2.6/user-guide/examples/bionemo-evo2/zeroshot_brca1/)
 lists about 0.87 for Evo 2 7B on the full set. The protocol is similar but not identical, so treat that
 as a sanity check, not a head-to-head comparison.
 
-What this does **not** show: it is one gene, SNVs only (indels, the other main feature of this tool, are
-not covered by this benchmark), a 400-variant sample, and the labels come from a cell-line assay rather
-than patient outcomes. The small groups (such as the 10 splice-region LOF variants) have wide uncertainty.
+What this does **not** show: it is one gene and SNVs only (indels, the other main feature of this tool,
+are not covered by this benchmark), and the labels come from a cell-line assay rather than patient
+outcomes. The canonical-splice group is almost all LOF (128 of 143), so its AUROC rests on only 15
+non-LOF variants and is very uncertain.
+
+## Validation on ClinVar indels
+
+SNVs are only half the story, so there is a second benchmark for insertions and deletions: ClinVar
+variants labelled pathogenic (or likely pathogenic) versus benign (or likely benign), with at least one
+review star, up to 50 bases long. This follows the kind of comparison the Evo 2 paper made for non-SNVs.
+Download `variant_summary.txt.gz` from NCBI's
+[ClinVar FTP area](https://ftp.ncbi.nlm.nih.gov/pub/clinvar/tab_delimited/) and read ClinVar's
+[data-use terms](https://www.ncbi.nlm.nih.gov/clinvar/intro/) first.
+
+```powershell
+evo-vscore-brca1 prepare-clinvar --summary-file data\variant_summary.txt.gz --out-dir data\clinvar --max-per-class 300
+evo-vscore-brca1 fetch-ref --out data\hg19.fa --chroms 1-22,X        # about 3 GB; slow but one-off
+evo-vscore --vcf data\clinvar\clinvar.vcf --ref data\hg19.fa --backend nvidia --dry-run
+evo-vscore --vcf data\clinvar\clinvar.vcf --ref data\hg19.fa --backend nvidia --rpm 36 --out out\clinvar
+evo-vscore-brca1 evaluate --results out\clinvar.csv --labels data\clinvar\clinvar_labels.csv --positive PATH --drop "" --summary out\clinvar_summary.md
+```
+
+The evaluation reports the AUROC both with the summed `delta_ll` and with the per-base `delta_mean_ll`
+(insertions and deletions change the window length, so which one suits indels is an open question this
+answers), and splits the result by variant type and by an approximate coding / non-coding call.
+
+**Caveat:** pathogenic and benign ClinVar indels sit in different places (pathogenic ones are mostly in
+coding exons, benign ones often in introns or repeats), so a high overall AUROC can partly reflect
+location rather than fine-grained skill. The coding / non-coding split is there to show this; the
+split is a heuristic read from the variant's HGVS name, not a proper annotation.
+
+**Results:** not yet recorded.
 
 ## Limitations (v0.2)
 
@@ -153,8 +184,8 @@ than patient outcomes. The small groups (such as the 10 splice-region LOF varian
 
 ## Roadmap
 
-- **v0.2 (done):** BRCA1 SNV validation tooling and a first result (above). A full 3,893-variant run would tighten the intervals.
-- **Next:** an indel benchmark, since indels are not covered yet.
+- **v0.2 (done):** BRCA1 SNV validation tooling and a full 3,893-variant result (above).
+- **v0.2.1:** ClinVar indel validation tooling (above); the result comes after the first run.
 - **v0.3:** a `local` backend for people with their own GPU, a rented GPU or a cluster, with no API limit.
 - Later: genome-track outputs (bigWig/BED), a pip release, and a web interface.
 
