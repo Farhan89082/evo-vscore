@@ -320,9 +320,12 @@ def read_clinvar(path, assembly="GRCh37", min_stars=1, chroms=None, max_indel=50
                     del records[key]
                     dropped["conflicting_duplicate"] += 1
                 continue
+            region = approx_region(row[col["name"]])
+            if region == "coding_approx":  # a length change that is not a multiple of 3 shifts the reading frame
+                region = "coding_frameshift_approx" if (len(alt) - len(ref)) % 3 else "coding_inframe_approx"
             records[key] = {
                 "chrom": chrom, "pos": int(pos_text), "ref": ref, "alt": alt, "class": label,
-                "score": "", "consequence": approx_region(row[col["name"]]), "gene": row[col["gene"]].strip(),
+                "score": "", "consequence": region, "gene": row[col["gene"]].strip(),
                 "stars": stars, "clinvar_type": row[col["type"]].strip(),
             }
     return list(records.values()), dict(dropped)
@@ -332,20 +335,46 @@ def _chrom_order(chrom):
     return int(chrom) if chrom.isdigit() else 100 + ord(chrom[0])
 
 
+def _sort_key(r):
+    return (_chrom_order(r["chrom"]), r["pos"], r["alt"])
+
+
 def prepare_clinvar(summary_path, out_dir, assembly="GRCh37", min_stars=1, chroms=None,
-                    max_per_class=300, seed=42, max_indel=50):
+                    max_per_class=300, seed=42, max_indel=50, per_stratum=None):
+    """Write a ClinVar indel benchmark.
+
+    With ``per_stratum=N`` the sample is *matched*: within each variant type (coding
+    frameshift, coding in-frame, non-coding) it takes the same number of pathogenic and
+    benign variants, up to N each, so variant type alone cannot predict the label.
+    Without it, up to ``max_per_class`` are drawn at random per class.
+    """
     records, dropped = read_clinvar(summary_path, assembly, min_stars, chroms, max_indel)
     if not records:
         raise ValueError("No usable ClinVar indels were found (dropped: %s)" % dropped)
     available = Counter(r["class"] for r in records)
-    chosen = []
-    for label in sorted(available):
-        group = sorted((r for r in records if r["class"] == label),
-                       key=lambda r: (_chrom_order(r["chrom"]), r["pos"], r["alt"]))
-        if max_per_class and len(group) > max_per_class:
-            group = random.Random(seed).sample(group, max_per_class)
-        chosen.extend(group)
-    chosen.sort(key=lambda r: (_chrom_order(r["chrom"]), r["pos"], r["alt"]))
+    strata = {}
+    for r in records:
+        strata.setdefault(r["consequence"], {"PATH": [], "BENIGN": []})[r["class"]].append(r)
+    available_strata = {s: {c: len(v) for c, v in groups.items()} for s, groups in sorted(strata.items())}
+    chosen, taken = [], {}
+    if per_stratum:
+        rng = random.Random(seed)
+        for stratum, groups in sorted(strata.items()):
+            n = min(per_stratum, len(groups["PATH"]), len(groups["BENIGN"]))
+            taken[stratum] = n
+            for label in ("PATH", "BENIGN"):
+                pool = sorted(groups[label], key=_sort_key)
+                chosen.extend(rng.sample(pool, n) if n < len(pool) else pool)
+        if not chosen:
+            raise ValueError("No variant type has both pathogenic and benign variants (available: %s)"
+                             % available_strata)
+    else:
+        for label in sorted(available):
+            group = sorted((r for r in records if r["class"] == label), key=_sort_key)
+            if max_per_class and len(group) > max_per_class:
+                group = random.Random(seed).sample(group, max_per_class)
+            chosen.extend(group)
+    chosen.sort(key=_sort_key)
     _write_benchmark_files(chosen, out_dir, "clinvar.vcf", "clinvar_labels.csv", "c",
                            "evo-vscore prepare-clinvar (%s indels)" % assembly)
     return {
@@ -353,6 +382,8 @@ def prepare_clinvar(summary_path, out_dir, assembly="GRCh37", min_stars=1, chrom
         "available": dict(available),
         "classes": dict(Counter(r["class"] for r in chosen)),
         "regions": dict(Counter((r["class"], r["consequence"]) for r in chosen)),
+        "available_strata": available_strata,
+        "taken_per_stratum": taken,
         "chromosomes": sorted({r["chrom"] for r in chosen}, key=_chrom_order),
         "dropped": dropped,
         "dir": str(out_dir),
@@ -519,7 +550,9 @@ def build_parser():
     c.add_argument("--assembly", default="GRCh37", help="GRCh37 matches the hg19 reference (default)")
     c.add_argument("--chroms", default="1-22,X", help="chromosomes to keep (default: %(default)s)")
     c.add_argument("--min-stars", type=int, default=1, help="minimum ClinVar review stars (default: %(default)s)")
-    c.add_argument("--max-per-class", type=int, default=300, help="cap per class, 0 = no cap (default: %(default)s)")
+    c.add_argument("--max-per-class", type=int, default=300, help="cap per class when not matching, 0 = no cap (default: %(default)s)")
+    c.add_argument("--per-stratum", type=int, help="MATCHED sampling: up to N pathogenic AND N benign within each "
+                   "variant type (coding frameshift / coding in-frame / non-coding). Recommended.")
     c.add_argument("--max-indel", type=int, default=50, help="longest insertion/deletion in bases (default: %(default)s)")
     c.add_argument("--seed", type=int, default=42)
 
@@ -527,7 +560,8 @@ def build_parser():
     e.add_argument("--results", required=True)
     e.add_argument("--labels", required=True)
     e.add_argument("--positive", default="LOF", help="the damaging class: LOF for BRCA1, PATH for ClinVar")
-    e.add_argument("--drop", default="INT", help="classes to leave out of the stricter comparison ('' for none)")
+    e.add_argument("--drop", default="INT", help="classes to leave out of the stricter comparison; "
+                   "use NONE for none (PowerShell drops an empty \"\" argument)")
     e.add_argument("--summary", help="also write the summary to this .md file")
     e.add_argument("--title", default="Validation summary")
     e.add_argument("--bootstrap", type=int, default=1000)
@@ -549,12 +583,20 @@ def main(argv=None):
             print("Skipped rows: %s" % info["skipped"])
         elif args.command == "prepare-clinvar":
             info = prepare_clinvar(args.summary_file, args.out_dir, args.assembly, args.min_stars,
-                                   parse_chroms(args.chroms), args.max_per_class, args.seed, args.max_indel)
+                                   parse_chroms(args.chroms), args.max_per_class, args.seed, args.max_indel,
+                                   args.per_stratum)
             print("Wrote %s\\clinvar.vcf and clinvar_labels.csv: %d indels %s" % (info["dir"], info["n"], info["classes"]))
             print("Available before sampling: %s" % info["available"])
-            print("Coding/non-coding split (approximate): %s" % {"%s/%s" % k: v for k, v in info["regions"].items()})
+            print("Available per variant type (approximate, from the HGVS name):")
+            for stratum, counts in info["available_strata"].items():
+                note = ("  -> using %d of each" % info["taken_per_stratum"][stratum]) if info["taken_per_stratum"] else ""
+                print("  %-26s PATH=%-7d BENIGN=%-7d%s" % (stratum, counts["PATH"], counts["BENIGN"], note))
+            print("Sample by class and type: %s" % {"%s/%s" % k: v for k, v in sorted(info["regions"].items())})
             print("Chromosomes: %s" % ", ".join(info["chromosomes"]))
             print("Dropped: %s" % info["dropped"])
+            thin = [s for s, c in info["available_strata"].items() if min(c["PATH"], c["BENIGN"]) < 10]
+            if info["taken_per_stratum"] and thin:
+                print("note: these types lack 10+ of one class and cannot be compared: %s" % ", ".join(thin))
             if min(info["classes"].values()) < 30 or len(info["classes"]) < 2:
                 print("warning: a class has fewer than 30 variants, so the AUROC will be very uncertain")
         else:

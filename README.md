@@ -157,23 +157,52 @@ Download `variant_summary.txt.gz` from NCBI's
 [data-use terms](https://www.ncbi.nlm.nih.gov/clinvar/intro/) first.
 
 ```powershell
-evo-vscore-brca1 prepare-clinvar --summary-file data\variant_summary.txt.gz --out-dir data\clinvar --max-per-class 300
+evo-vscore-brca1 prepare-clinvar --summary-file data\variant_summary.txt.gz --out-dir data\clinvar --per-stratum 100
 evo-vscore-brca1 fetch-ref --out data\hg19.fa --chroms 1-22,X        # about 3 GB; slow but one-off
 evo-vscore --vcf data\clinvar\clinvar.vcf --ref data\hg19.fa --backend nvidia --dry-run
 evo-vscore --vcf data\clinvar\clinvar.vcf --ref data\hg19.fa --backend nvidia --rpm 36 --out out\clinvar
-evo-vscore-brca1 evaluate --results out\clinvar.csv --labels data\clinvar\clinvar_labels.csv --positive PATH --drop "" --summary out\clinvar_summary.md
+evo-vscore-brca1 evaluate --results out\clinvar.csv --labels data\clinvar\clinvar_labels.csv --positive PATH --drop NONE --summary out\clinvar_summary.md
 ```
 
-The evaluation reports the AUROC both with the summed `delta_ll` and with the per-base `delta_mean_ll`
-(insertions and deletions change the window length, so which one suits indels is an open question this
-answers), and splits the result by variant type and by an approximate coding / non-coding call.
+**Why the sample is matched.** In ClinVar, pathogenic and benign indels sit in different places:
+a plain random sample of 300 of each had 280 of 300 pathogenic variants in coding regions and 291 of 300
+benign ones outside them. A scorer that merely tells coding DNA from non-coding DNA would look good on
+that, so `--per-stratum N` takes the *same number* of pathogenic and benign variants within each variant
+type (coding frameshift, coding in-frame, non-coding), up to N each. Type alone then cannot predict the
+label, and the evaluation reports an AUROC within each type as well as overall. Types that lack enough
+variants of one class (benign frameshifts are rare) are listed and left out.
 
-**Caveat:** pathogenic and benign ClinVar indels sit in different places (pathogenic ones are mostly in
-coding exons, benign ones often in introns or repeats), so a high overall AUROC can partly reflect
-location rather than fine-grained skill. The coding / non-coding split is there to show this; the
-split is a heuristic read from the variant's HGVS name, not a proper annotation.
+The type is a heuristic read from the variant's HGVS name and the length change (a length that is not a
+multiple of 3 counts as a frameshift), not a proper annotation. The evaluation also compares the summed
+`delta_ll` with the per-base `delta_mean_ll`, since insertions and deletions change the window length.
 
-**Results:** not yet recorded.
+### Results (22 Oct 2026)
+
+600 ClinVar indels, matched: 100 pathogenic and 100 benign in each of three types. GRCh37, at least one
+review star, up to 50 bases, 8,192-base windows, Evo 2 7B through NVIDIA's hosted API (47 minutes).
+
+| Comparison | n | Pathogenic | AUROC | 95% CI (bootstrap) |
+|---|---|---|---|---|
+| All, summed `delta_ll` | 600 | 300 | 0.826 | 0.791 to 0.861 |
+| All, per-base `delta_mean_ll` | 600 | 300 | 0.821 | 0.786 to 0.854 |
+| Deletions | 397 | 219 | 0.823 | 0.781 to 0.864 |
+| Insertions | 203 | 81 | 0.838 | 0.783 to 0.890 |
+| Coding, frameshift | 200 | 100 | 0.667 | 0.588 to 0.744 |
+| Coding, in-frame | 200 | 100 | 0.946 | 0.912 to 0.976 |
+| Non-coding | 200 | 100 | 0.923 | 0.877 to 0.963 |
+
+Mean `delta_ll`: benign -20.0, pathogenic -56.3. The summed and per-base scores perform alike (the
+intervals overlap), so the summed `delta_ll` stays the default.
+
+The model separates pathogenic from benign well for in-frame coding and non-coding indels and poorly for
+frameshifts. Both classes in that group are frameshifts, so they differ in where the frameshift falls
+(for example whether the transcript escapes decay) rather than in the change itself; that is a plausible
+reason, not something tested here.
+
+What this does **not** show: it is a single 600-variant sample; ClinVar labels are submitters'
+interpretations rather than ground truth (the benign frameshift labels in particular may be noisy); variant
+type was matched but gene and repeat context were not (many benign indels sit in repeat tracts, an easy cue);
+and no comparison with the published Evo 2 non-SNV numbers is made, since the protocols differ.
 
 ## Limitations (v0.2)
 
@@ -185,7 +214,7 @@ split is a heuristic read from the variant's HGVS name, not a proper annotation.
 ## Roadmap
 
 - **v0.2 (done):** BRCA1 SNV validation tooling and a full 3,893-variant result (above).
-- **v0.2.1:** ClinVar indel validation tooling (above); the result comes after the first run.
+- **v0.2.1:** ClinVar indel validation (above): overall AUROC 0.826 on a matched sample, weakest for frameshifts.
 - **v0.3:** a `local` backend for people with their own GPU, a rented GPU or a cluster, with no API limit.
 - Later: genome-track outputs (bigWig/BED), a pip release, and a web interface.
 

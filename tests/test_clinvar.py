@@ -81,7 +81,7 @@ def test_prepare_clinvar_filters_and_reports(clinvar_file, tmp_path):
     assert d["longer_than_max_indel"] == 1
     assert d["unusable_alleles"] == 1
     assert d["conflicting_duplicate"] == 1
-    assert info["regions"][("PATH", "coding_approx")] == 14
+    assert info["regions"][("PATH", "coding_inframe_approx")] == 14
     assert info["regions"][("BENIGN", "noncoding_approx")] == 14
     labels = list(csv.DictReader(open(tmp_path / "cv" / "clinvar_labels.csv", newline="")))
     vcf = [l for l in open(tmp_path / "cv" / "clinvar.vcf") if not l.startswith("#")]
@@ -171,7 +171,7 @@ def test_clinvar_pipeline_with_mock_backend(clinvar_file, genome, tmp_path, caps
     assert v.main(["prepare-clinvar", "--summary-file", str(clinvar_file), "--out-dir", str(tmp_path / "cv"),
                    "--chroms", "1,2", "--max-per-class", "0"]) == 0
     out = capsys.readouterr().out
-    assert "28 indels" in out and "coding_approx" in out
+    assert "28 indels" in out and "coding_inframe_approx" in out
     assert cli.main(["--vcf", str(tmp_path / "cv" / "clinvar.vcf"), "--ref", str(fa), "--backend", "mock",
                      "--window", "512", "--no-cache", "--out", str(tmp_path / "r")]) == 0
     capsys.readouterr()
@@ -214,3 +214,69 @@ def test_fetch_chromosomes_failure_is_a_clean_message(tmp_path, capsys):
     code = v.main(["fetch-ref", "--out", str(tmp_path / "g.fa"), "--chroms", "5", "--base-url",
                    (tmp_path / "nothing").as_uri()])
     assert code == 2 and "error:" in capsys.readouterr().err
+
+
+# -- frame-aware types and matched sampling ----------------------------------------------------
+def _typed_rows():
+    rows = []
+    def add(n, sig, kind, start):
+        for i in range(n):
+            pos = start + i * 10
+            if kind == "inframe":
+                rows.append(row("Deletion", "NM_1(G):c.%d_%ddel" % (100 + i, 102 + i), sig=sig, pos=str(pos), ref="ACGT", alt="A"))
+            elif kind == "frameshift":
+                rows.append(row("Deletion", "NM_1(G):c.%ddel" % (100 + i), sig=sig, pos=str(pos), ref="ACG", alt="A"))
+            else:
+                rows.append(row("Deletion", "NM_1(G):c.%d+5del" % (100 + i), sig=sig, pos=str(pos), ref="AC", alt="A"))
+    add(12, "Pathogenic", "inframe", 1000)
+    add(8, "Benign", "inframe", 2000)
+    add(6, "Pathogenic", "noncoding", 3000)
+    add(20, "Benign", "noncoding", 4000)
+    add(5, "Pathogenic", "frameshift", 5000)       # no benign frameshifts at all
+    return rows
+
+
+def test_coding_indels_are_split_by_reading_frame(tmp_path):
+    path = tmp_path / "vs.txt.gz"
+    write_clinvar(path, _typed_rows())
+    records, _ = v.read_clinvar(path, chroms=["1"])
+    kinds = {r["consequence"] for r in records}
+    assert kinds == {"coding_inframe_approx", "coding_frameshift_approx", "noncoding_approx"}
+
+
+def test_matched_sampling_balances_every_stratum(tmp_path):
+    path = tmp_path / "vs.txt.gz"
+    write_clinvar(path, _typed_rows())
+    info = v.prepare_clinvar(path, tmp_path / "m", chroms=["1"], per_stratum=10)
+    assert info["taken_per_stratum"] == {"coding_frameshift_approx": 0, "coding_inframe_approx": 8, "noncoding_approx": 6}
+    assert info["available_strata"]["coding_inframe_approx"] == {"PATH": 12, "BENIGN": 8}
+    assert info["classes"] == {"BENIGN": 14, "PATH": 14}
+    # within every stratum the two classes have identical counts, so type alone cannot predict the label
+    for stratum, n in info["taken_per_stratum"].items():
+        if n:
+            assert info["regions"][("PATH", stratum)] == info["regions"][("BENIGN", stratum)] == n
+
+
+def test_matched_sampling_is_reproducible_and_capped(tmp_path):
+    path = tmp_path / "vs.txt.gz"
+    write_clinvar(path, _typed_rows())
+    a = v.prepare_clinvar(path, tmp_path / "a", chroms=["1"], per_stratum=4, seed=9)
+    b = v.prepare_clinvar(path, tmp_path / "b", chroms=["1"], per_stratum=4, seed=9)
+    assert a["classes"] == {"BENIGN": 8, "PATH": 8}
+    assert (tmp_path / "a" / "clinvar.vcf").read_text() == (tmp_path / "b" / "clinvar.vcf").read_text()
+
+
+def test_matched_sampling_without_overlap_is_a_clear_error(tmp_path):
+    path = tmp_path / "vs.txt.gz"
+    write_clinvar(path, [r for r in _typed_rows() if r[5] == "Pathogenic"])  # only pathogenic rows
+    with pytest.raises(ValueError):
+        v.prepare_clinvar(path, tmp_path / "x", chroms=["1"], per_stratum=5)
+
+
+def test_per_stratum_flag_on_the_command_line(tmp_path, capsys):
+    path = tmp_path / "vs.txt.gz"
+    write_clinvar(path, _typed_rows())
+    assert v.main(["prepare-clinvar", "--summary-file", str(path), "--out-dir", str(tmp_path / "c"),
+                   "--chroms", "1", "--per-stratum", "10"]) == 0
+    out = capsys.readouterr().out
+    assert "using 8 of each" in out and "cannot be compared" in out and "coding_frameshift_approx" in out
